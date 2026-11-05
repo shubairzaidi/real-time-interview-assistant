@@ -1,10 +1,82 @@
 # Real-Time Interview Assistant POC
 
-This repository contains the Angular and FastAPI foundation, browser microphone capture, Deepgram live speech-to-text, interview question detection, and streamed OpenRouter answer generation. It does not include conversation memory or answer modes.
+A real-time interview assistant built with **Angular, FastAPI, Deepgram and OpenRouter**. It captures interviewer audio through the browser microphone, converts speech into text, detects interview questions and streams AI-generated suggested answers.
 
-## Run locally
+## Features
 
-Start the backend in one PowerShell terminal:
+- Browser microphone capture using `MediaRecorder`.
+- Binary audio streaming from Angular to FastAPI over WebSocket.
+- Live speech-to-text using Deepgram Nova-3.
+- Separate interim and final transcript display.
+- Rule-based interview question detection using confirmed speech segments.
+- Streaming answer generation using OpenRouter LLM APIs.
+- Resume and job description context for personalized answers.
+- Previous answer cleared when a new question is detected.
+- Basic WebSocket error handling and Deepgram reconnection attempts.
+- Responsive dashboard with listening, thinking and answering status.
+
+## Architecture
+
+```text
+Browser Microphone
+       |
+       v
+Angular + MediaRecorder
+       |
+       | Audio chunks (WebSocket)
+       v
+FastAPI Backend
+       |
+       v
+Deepgram Streaming STT
+       |
+       | Interim / Final Transcript
+       v
+Question Detection
+       |
+       | Detected Question
+       v
+OpenRouter LLM
+       |
+       | Streaming Answer Tokens
+       v
+Angular Dashboard
+       |
+       v
+Suggested Answer
+```
+
+Resume and job description are sent separately as interview context and used when generating answers.
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | Angular, TypeScript |
+| Backend | Python, FastAPI |
+| Communication | WebSockets |
+| Speech-to-Text | Deepgram Nova-3 |
+| LLM | OpenRouter |
+| HTTP Client | HTTPX |
+
+## Prerequisites
+
+- Python 3.10+
+- Node.js and npm
+- Deepgram API key
+- OpenRouter API key
+- Chrome or Edge browser with microphone access
+
+## Run Locally
+
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/shubairzaidi/real-time-interview-assistant.git
+cd real-time-interview-assistant
+```
+
+### 2. Configure the backend
 
 ```powershell
 cd backend
@@ -12,14 +84,31 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 Copy-Item .env.example .env
-# Add DEEPGRAM_API_KEY and OPENROUTER_API_KEY to backend/.env before starting.
-# OPENROUTER_MODEL defaults to openai/gpt-4.1-mini when unset.
+```
+
+Add your API keys to `backend/.env`:
+
+```env
+DEEPGRAM_API_KEY=your_deepgram_api_key
+OPENROUTER_API_KEY=your_openrouter_api_key
+OPENROUTER_MODEL=openai/gpt-4.1-mini
+```
+
+Never commit your `.env` file or expose API keys in the frontend.
+
+Start the backend:
+
+```powershell
 uvicorn app.main:app --env-file .env --reload
 ```
 
-The health check is available at `http://127.0.0.1:8000/health`.
+Backend health check:
 
-Start the frontend in a second PowerShell terminal:
+`http://127.0.0.1:8000/health`
+
+### 3. Start the frontend
+
+Open another terminal:
 
 ```powershell
 cd frontend
@@ -27,73 +116,129 @@ npm install
 npm start
 ```
 
-Open `http://localhost:4200`, select **Connect**, enter text, and select **Send**. The FastAPI WebSocket echoes the text into the received-message list.
+Open `http://localhost:4200` in your browser.
 
-## Test microphone streaming
+## How to Use
 
-1. Use Chrome, Edge, or another browser that supports `MediaRecorder`.
-2. Open `http://localhost:4200` and select **Connect**. Wait for the connection status to become `Connected`.
-3. Select **Start Listening** and allow microphone access when the browser asks.
-4. Speak for a few seconds, then select **Stop Listening**.
-5. Check the backend terminal for messages such as `Received audio chunk: 1234 bytes`.
+1. Start both backend and frontend applications.
+2. Open the Angular application.
+3. Enter your resume details and job description in the Interview Context fields.
+4. Select **Connect** to establish the backend WebSocket connection.
+5. Select **Start Listening** and allow microphone access.
+6. Ask an interview question through the microphone.
+7. Watch the interim and final transcripts update.
+8. Once Deepgram finalizes the utterance, the question detector checks whether it is an interview question.
+9. The detected question is sent to the LLM along with the interview context.
+10. The suggested answer streams progressively into the dashboard.
+11. Select **Stop Listening** when finished.
 
-If access is denied, the page displays `Microphone permission: Denied`. Stopping the recording, disconnecting, or leaving the page stops every microphone track and releases the browser resource.
+## Question Detection
 
-## Test live transcription
+Question detection uses a rule-based approach.
 
-1. Put a valid Deepgram key in `backend/.env` as `DEEPGRAM_API_KEY=...`. Do not put the key in the frontend.
-2. Start both applications using the commands above and open `http://localhost:4200`.
-3. Select **Connect**. The live transcription panel should say `Deepgram is ready.`
-4. Select **Start Listening**, allow microphone access, and speak a short sentence.
-5. Confirm that temporary words appear under **Interim transcript**, then confirmed words move to **Final transcript**.
+It checks confirmed transcript segments after Deepgram emits the `speech_final` event.
 
-The page displays the actual `MediaRecorder` MIME type. The backend logs it but leaves Deepgram's `encoding` and `sample_rate` unset so the streamed WebM/Opus container can be detected automatically.
+Supported patterns include:
 
-## Test question detection
+- WH questions: What, Why, How, When, Where, Which and Who.
+- Auxiliary and modal openings: Can, Could, Would, Will, Is, Are, Do and Have.
+- Interview instructions: Explain, Describe, Discuss and Compare.
+- Common interview phrases: Tell me about and Walk me through.
 
-Question detection waits for Deepgram's `speech_final` event, so it uses only confirmed transcript segments from one completed utterance. It then checks whether the utterance starts with a common interview pattern.
+Greetings, acknowledgements and common small-talk phrases are ignored.
 
-| Spoken utterance | Expected result |
-| --- | --- |
-| `What is dependency injection?` | Detected question |
-| `Explain Python decorators.` | Detected question |
-| `Tell me about a challenging project.` | Detected question |
-| `Can you explain the difference between a list and a tuple?` | Detected question |
-| `How are you implementing authentication?` | Detected question |
-| `Walk me through your project architecture.` | Detected question |
-| `Hello, thank you for joining.` | Ignored |
-| `How are you today?` | Ignored as small talk |
-| `Okay, let us begin.` | Ignored |
+This is a lightweight heuristic approach and may not detect every indirectly phrased interview question.
 
-With Deepgram and the microphone running, speak one of the question examples and pause briefly. Its text appears in **Detected Question** after Deepgram finalizes the utterance. A later detected question replaces the previous value.
+## Answer Generation
 
-## Test streamed answer generation
+The backend sends the detected question, resume context and job description to OpenRouter.
 
-1. Add a valid `OPENROUTER_API_KEY` to `backend/.env`. Keep this file local; it is ignored by Git.
-2. Optionally set `OPENROUTER_MODEL=openai/gpt-4.1-mini`. This is the backend default when no model value is set.
-3. Start both applications and connect the browser WebSocket.
-4. Paste relevant resume details and the job description into the two **Interview Context** textareas.
-5. Start listening, ask a supported interview question, then pause for Deepgram to finalize it.
-6. Confirm that **Detected Question** updates first and **Suggested Answer** receives text progressively.
+The LLM prompt is designed to:
 
-Each textarea and the backend limit context to 6,000 characters. Context is stored only for the active WebSocket session and is never written to disk or logged.
+- Generate concise, natural, spoken answers.
+- Prefer approximately 60–90 words.
+- Use 3–5 bullets when appropriate.
+- Avoid inventing experience, tools or project details.
+- Acknowledge missing information instead of making unsupported claims.
 
-## File responsibilities
+Answers are streamed token by token to the Angular dashboard.
 
-- `.env.example` — example local environment values reserved for later configuration.
-- `.gitignore` — prevents local dependencies, build output, environment values, and editor files from being committed.
-- `backend/requirements.txt` — Python packages needed to run the API.
-- `backend/app/__init__.py` — marks the API directory as a Python package.
-- `backend/app/main.py` — FastAPI application, health endpoint, and echo WebSocket endpoint.
-- `frontend/package.json` and `frontend/package-lock.json` — frontend scripts and reproducible npm dependency versions.
-- `frontend/angular.json` — Angular build and development-server configuration.
-- `frontend/tsconfig.json` and `frontend/tsconfig.app.json` — TypeScript compiler configuration.
-- `frontend/.editorconfig` and `frontend/.gitignore` — frontend formatting and ignored local files.
-- `frontend/src/index.html` — HTML page that hosts the Angular application.
-- `frontend/src/main.ts` — Angular application bootstrap entry point.
-- `frontend/src/styles.css` — global styles (currently intentionally empty).
-- `frontend/src/app/app.config.ts` — application-wide Angular providers.
-- `frontend/src/app/app.component.ts` — page behavior and button handlers.
-- `frontend/src/app/app.component.html` — the minimal connection and messaging interface.
-- `frontend/src/app/app.component.css` — simple layout styles for the interface.
-- `frontend/src/app/websocket.service.ts` — browser WebSocket connection, status, sending, and received-message state.
+## Tests
+
+Backend unit tests:
+
+```powershell
+cd backend
+pytest
+```
+
+The tests cover question detection and OpenRouter answer-generation logic.
+
+## Project Structure
+
+```text
+real-time-interview-assistant/
+│
+├── backend/
+│   ├── app/
+│   │   ├── __init__.py
+│   │   ├── main.py
+│   │   ├── openrouter_client.py
+│   │   └── question_detector.py
+│   ├── tests/
+│   │   ├── __init__.py
+│   │   ├── test_openrouter_client.py
+│   │   └── test_question_detector.py
+│   ├── requirements.txt
+│   └── .env.example
+│
+├── frontend/
+│   ├── src/
+│   │   ├── app/
+│   │   │   ├── app.component.ts
+│   │   │   ├── app.component.html
+│   │   │   ├── app.component.css
+│   │   │   ├── app.config.ts
+│   │   │   └── websocket.service.ts
+│   │   ├── styles.css
+│   │   ├── index.html
+│   │   └── main.ts
+│   ├── angular.json
+│   ├── package.json
+│   └── tsconfig.json
+│
+├── .env.example
+├── .gitignore
+└── README.md
+```
+
+### Important File Responsibilities
+
+| File | Responsibility |
+|---|---|
+| `main.py` | FastAPI application, WebSocket communication, Deepgram connection, transcript handling and answer streaming orchestration. |
+| `question_detector.py` | Rule-based interview question detection. |
+| `openrouter_client.py` | LLM prompt construction and OpenRouter streaming response handling. |
+| `websocket.service.ts` | Angular WebSocket connection, audio transmission and backend event handling. |
+| `app.component.ts` | Microphone lifecycle, interview context and dashboard behavior. |
+| `app.component.html` | Dashboard layout and UI elements. |
+| `app.component.css` | Dashboard component styling. |
+| `styles.css` | Global application styles. |
+
+## Current Limitations
+
+- Question detection is heuristic-based and may miss indirect questions.
+- Browser microphone audio capture is supported; system/tab audio capture is not implemented.
+- Conversation memory and multiple answer modes are not implemented.
+- No persistent database or user authentication.
+- Reconnection is best-effort and has not been validated for every failure scenario.
+- Performance depends on network conditions and external STT/LLM API response times.
+
+## Future Improvements
+
+- Improve question detection using an LLM-based classifier.
+- Add conversation memory for follow-up questions.
+- Introduce answer modes such as concise, detailed and technical.
+- Add latency monitoring and performance optimization.
+- Improve reconnection and session recovery.
+- Add automated integration tests and deployment support.
