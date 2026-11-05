@@ -1,0 +1,190 @@
+<main class="app-shell">
+  <div class="ambient-orb orb-one" aria-hidden="true"></div>
+  <div class="ambient-orb orb-two" aria-hidden="true"></div>
+
+  <div class="dashboard-shell">
+    <header class="topbar">
+      <div class="brand-lockup">
+        <div class="brand-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M12 3.5 19 7.5v9l-7 4-7-4v-9l7-4Z" stroke="currentColor" stroke-width="1.5"/><path d="M8.5 12h7M12 8.5v7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        </div>
+        <div>
+          <p class="brand-overline">Realtime copilot</p>
+          <h1>AI Interview Assistant</h1>
+        </div>
+      </div>
+
+      <div class="header-status" aria-label="Session status">
+        <span
+          class="connection-badge"
+          [class.is-connected]="(connectionStatus | async) === 'Connected'"
+          [class.is-connecting]="(connectionStatus | async) === 'Connecting'"
+        >
+          <span class="connection-dot"></span>
+          {{ connectionStatus | async }}
+        </span>
+        <span class="mode-badge listening-badge" *ngIf="isListening">
+          <span class="live-wave" aria-hidden="true"><i></i><i></i><i></i></span>
+          Listening
+        </span>
+        <ng-container *ngIf="answerStatus | async as currentAnswerStatus">
+          <span class="mode-badge ai-badge" *ngIf="currentAnswerStatus === 'Generating answer' && !(answer | async)">
+            Thinking
+          </span>
+          <span class="mode-badge ai-badge" *ngIf="currentAnswerStatus === 'Generating answer' && (answer | async)">
+            Answering
+          </span>
+        </ng-container>
+      </div>
+    </header>
+
+    <section class="command-deck" aria-label="Interview session controls">
+      <div class="command-intro">
+        <span class="eyebrow">Session</span>
+        <p>Ready when you are</p>
+      </div>
+
+      <div class="controls-cluster">
+        <button
+          class="icon-button connection-action"
+          type="button"
+          (click)="connect()"
+          [disabled]="(connectionStatus | async) === 'Connected' || (connectionStatus | async) === 'Connecting'"
+          aria-label="Connect"
+        >
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8.6 15.4a4.8 4.8 0 0 1 0-6.8l1.1-1.1a4.8 4.8 0 0 1 6.8 6.8l-.6.6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M15.4 8.6a4.8 4.8 0 0 1 0 6.8l-1.1 1.1a4.8 4.8 0 0 1-6.8-6.8l.6-.6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          <span>Connect</span>
+        </button>
+        <button
+          class="icon-button muted-action"
+          type="button"
+          (click)="disconnect()"
+          [disabled]="(connectionStatus | async) === 'Disconnected'"
+          aria-label="Disconnect"
+        >
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8.6 15.4a4.8 4.8 0 0 1 0-6.8l1.1-1.1M15.4 8.6a4.8 4.8 0 0 1 0 6.8l-1.1 1.1M4 4l16 16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          <span>Disconnect</span>
+        </button>
+        <span class="control-separator" aria-hidden="true"></span>
+        <button
+          class="listen-button"
+          type="button"
+          (click)="startListening()"
+          [disabled]="(connectionStatus | async) !== 'Connected' || isListening"
+        >
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="8.3" y="3" width="7.4" height="11.5" rx="3.7" stroke="currentColor" stroke-width="1.8"/><path d="M5.7 11.7a6.3 6.3 0 0 0 12.6 0M12 18v3M8.5 21h7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          <span>Start Listening</span>
+        </button>
+        <button
+          class="stop-button"
+          type="button"
+          (click)="stopListening()"
+          [disabled]="!isListening"
+        >
+          <span class="stop-square" aria-hidden="true"></span>
+          <span>Stop</span>
+        </button>
+      </div>
+
+      <div class="capture-status" aria-label="Audio capture status">
+        <span [class.status-warning]="microphonePermission === 'Denied' || microphonePermission === 'Unavailable'">
+          <i class="mic-state-dot" [class.is-active]="isListening"></i>
+          {{ microphonePermission === 'Granted' ? 'Microphone ready' : microphonePermission }}
+        </span>
+        <span>{{ isListening ? 'Capturing audio' : 'Capture idle' }}</span>
+      </div>
+    </section>
+
+    <section class="context-section" aria-labelledby="context-heading">
+      <div class="section-label-row">
+        <div>
+          <span class="eyebrow">Context layer</span>
+          <h2 id="context-heading">Interview context</h2>
+        </div>
+        <p>Used only to tailor this session.</p>
+      </div>
+
+      <div class="context-grid">
+        <label class="context-field" for="resume">
+          <span class="field-icon resume-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M7 3h7l4 4v14H7V3Z" stroke="currentColor" stroke-width="1.6"/><path d="M14 3v5h5M10 12h5M10 16h5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>
+          <span class="field-copy"><strong>Resume / Professional Summary</strong><small>Experience, projects, and strengths</small></span>
+          <textarea
+            id="resume"
+            [(ngModel)]="resume"
+            (change)="updateInterviewContext()"
+            maxlength="6000"
+            placeholder="Paste relevant candidate background..."
+          ></textarea>
+        </label>
+
+        <label class="context-field" for="job-description">
+          <span class="field-icon role-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="7" width="16" height="13" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M9 7V5.5A1.5 1.5 0 0 1 10.5 4h3A1.5 1.5 0 0 1 15 5.5V7M4 12h16M10 12v1h4v-1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>
+          <span class="field-copy"><strong>Job Description</strong><small>Role, requirements, and technologies</small></span>
+          <textarea
+            id="job-description"
+            [(ngModel)]="jobDescription"
+            (change)="updateInterviewContext()"
+            maxlength="6000"
+            placeholder="Paste the role and its key requirements..."
+          ></textarea>
+        </label>
+      </div>
+    </section>
+
+    <section class="workspace" aria-label="Interview workspace">
+      <article class="transcript-panel panel" aria-live="polite">
+        <header class="panel-header">
+          <div>
+            <span class="eyebrow">Voice intelligence</span>
+            <h2>Live transcript</h2>
+          </div>
+          <span class="service-badge"><i></i>{{ transcriptionStatus | async }}</span>
+        </header>
+
+        <div class="transcript-feed">
+          <section class="confirmed-copy">
+            <span class="copy-label"><i></i> Confirmed</span>
+            <p>{{ (finalTranscript | async) || 'Confirmed speech will settle here after a natural pause.' }}</p>
+          </section>
+          <section class="interim-copy">
+            <div class="interim-title">
+              <span class="copy-label"><i></i> Listening now</span>
+              <span class="interim-signal" *ngIf="isListening"><b></b><b></b><b></b><b></b></span>
+            </div>
+            <p>{{ (interimTranscript | async) || 'Live words will appear here as the conversation unfolds.' }}</p>
+          </section>
+        </div>
+      </article>
+
+      <aside class="insight-stack">
+        <article class="question-panel panel" aria-live="polite">
+          <header class="panel-header compact-header">
+            <div>
+              <span class="eyebrow">Recognition</span>
+              <h2>Detected question</h2>
+            </div>
+            <span class="question-glyph" aria-hidden="true">?</span>
+          </header>
+          <p class="question-copy">{{ (detectedQuestion | async) || 'The next completed interview question will be surfaced here.' }}</p>
+        </article>
+
+        <article class="answer-panel panel" aria-live="polite">
+          <header class="panel-header compact-header">
+            <div>
+              <span class="eyebrow">AI response</span>
+              <h2>Suggested answer</h2>
+            </div>
+            <span class="stream-state" *ngIf="(answerStatus | async) === 'Generating answer'">
+              <span class="stream-rings" aria-hidden="true"><i></i><i></i><i></i></span>
+              Streaming
+            </span>
+          </header>
+          <p class="answer-state">{{ answerStatus | async }}</p>
+          <div #answerScroll class="answer-copy" [class.is-empty]="!(answer | async)">
+            {{ (answer | async) || 'A focused, context-aware response will stream here once a question is detected.' }}
+          </div>
+        </article>
+      </aside>
+    </section>
+  </div>
+</main>
